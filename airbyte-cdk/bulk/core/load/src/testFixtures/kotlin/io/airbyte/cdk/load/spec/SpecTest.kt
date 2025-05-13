@@ -13,6 +13,7 @@ import com.deblock.jsondiff.matcher.StrictPrimitivePartialMatcher
 import com.deblock.jsondiff.viewer.OnlyErrorDiffViewer
 import io.airbyte.cdk.command.FeatureFlag
 import io.airbyte.cdk.load.command.Property
+import io.airbyte.cdk.load.config.DataChannelMedium
 import io.airbyte.cdk.load.test.util.FakeDataDumper
 import io.airbyte.cdk.load.test.util.IntegrationTest
 import io.airbyte.cdk.load.test.util.NoopDestinationCleaner
@@ -74,6 +75,7 @@ abstract class SpecTest(
                 "spec",
                 featureFlags = featureFlags,
                 micronautProperties = micronautProperties,
+                dataChannelMedium = DataChannelMedium.STDIO
             )
         runBlocking { process.run() }
         val messages = process.readMessages()

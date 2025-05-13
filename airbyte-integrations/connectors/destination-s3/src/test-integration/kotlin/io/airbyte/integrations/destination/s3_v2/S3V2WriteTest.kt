@@ -7,6 +7,7 @@ package io.airbyte.integrations.destination.s3_v2
 import io.airbyte.cdk.load.command.Append
 import io.airbyte.cdk.load.command.DestinationStream
 import io.airbyte.cdk.load.command.aws.asMicronautProperties
+import io.airbyte.cdk.load.config.DataChannelMedium
 import io.airbyte.cdk.load.data.*
 import io.airbyte.cdk.load.data.avro.AvroExpectedRecordMapper
 import io.airbyte.cdk.load.message.InputRecord
@@ -64,6 +65,7 @@ abstract class S3V2WriteTest(
         nullEqualsUnset = nullEqualsUnset,
         supportFileTransfer = true,
         unknownTypesBehavior = unknownTypesBehavior,
+        dataChannelMedium = DataChannelMedium.SOCKETS
     ) {
     @Disabled("Irrelevant for file destinations")
     @Test
@@ -315,7 +317,12 @@ class S3V2WriteTestJsonUncompressed :
         schematizedArrayBehavior = SchematizedNestedValueBehavior.PASS_THROUGH,
         preserveUndeclaredFields = true,
         allTypesBehavior = Untyped,
-    )
+    ) {
+    @Test
+    override fun testBasicWrite() {
+        super.testBasicWrite()
+    }
+}
 
 class S3V2WriteTestJsonRootLevelFlattening :
     S3V2WriteTest(

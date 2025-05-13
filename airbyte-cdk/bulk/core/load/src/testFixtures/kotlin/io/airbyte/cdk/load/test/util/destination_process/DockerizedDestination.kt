@@ -7,6 +7,7 @@ package io.airbyte.cdk.load.test.util.destination_process
 import io.airbyte.cdk.command.FeatureFlag
 import io.airbyte.cdk.extensions.grantAllPermissions
 import io.airbyte.cdk.load.command.Property
+import io.airbyte.cdk.load.config.DataChannelMedium
 import io.airbyte.cdk.load.util.deserializeToClass
 import io.airbyte.cdk.load.util.serializeToJsonBytes
 import io.airbyte.cdk.load.util.serializeToString
@@ -288,6 +289,7 @@ class DockerizedDestinationFactory(
         catalog: ConfiguredAirbyteCatalog?,
         useFileTransfer: Boolean,
         micronautProperties: Map<Property, String>,
+        dataChannelMedium: DataChannelMedium,
         vararg featureFlags: FeatureFlag,
     ): DestinationProcess {
         return DockerizedDestination(

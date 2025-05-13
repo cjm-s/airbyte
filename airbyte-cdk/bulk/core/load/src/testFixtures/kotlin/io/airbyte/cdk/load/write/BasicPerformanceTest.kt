@@ -11,6 +11,7 @@ import io.airbyte.cdk.load.command.DestinationCatalog
 import io.airbyte.cdk.load.command.DestinationStream
 import io.airbyte.cdk.load.command.EnvVarConstants
 import io.airbyte.cdk.load.command.Property
+import io.airbyte.cdk.load.config.DataChannelMedium
 import io.airbyte.cdk.load.data.AirbyteType
 import io.airbyte.cdk.load.data.IntegerType
 import io.airbyte.cdk.load.data.ObjectTypeWithoutSchema
@@ -399,6 +400,7 @@ abstract class BasicPerformanceTest(
                 testScenario.catalog.asProtocolObject(),
                 useFileTransfer = useFileTransfer,
                 micronautProperties = micronautProperties + fileTransferProperty,
+                dataChannelMedium = DataChannelMedium.STDIO
             )
 
         val duration =

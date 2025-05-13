@@ -8,6 +8,7 @@ import io.airbyte.cdk.load.util.CloseableCoroutine
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -44,7 +45,7 @@ class Reserved<T>(
 class ReservationManager(val totalCapacityBytes: Long) {
 
     private var usedBytes = AtomicLong(0L)
-    private var updateChannel = MutableStateFlow(0L)
+    private var updateChannel = MutableStateFlow(Unit)
     private val reserveLock = Mutex()
 
     val remainingCapacityBytes: Long
@@ -69,7 +70,7 @@ class ReservationManager(val totalCapacityBytes: Long) {
 
         reserveLock.withLock {
             while (usedBytes.get() + bytes > totalCapacityBytes) {
-                updateChannel.first()
+                updateChannel.drop(1)
             }
             usedBytes.addAndGet(bytes)
         }
@@ -87,6 +88,7 @@ class ReservationManager(val totalCapacityBytes: Long) {
     }
 
     suspend fun release(bytes: Long) {
-        updateChannel.value = usedBytes.addAndGet(-bytes)
+        usedBytes.addAndGet(-bytes)
+        updateChannel.value = Unit
     }
 }

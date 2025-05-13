@@ -10,6 +10,7 @@ import io.airbyte.cdk.load.command.DestinationCatalog
 import io.airbyte.cdk.load.command.DestinationStream
 import io.airbyte.cdk.load.command.EnvVarConstants
 import io.airbyte.cdk.load.command.Property
+import io.airbyte.cdk.load.config.DataChannelMedium
 import io.airbyte.cdk.load.message.DestinationRecordStreamComplete
 import io.airbyte.cdk.load.message.InputMessage
 import io.airbyte.cdk.load.message.InputRecord
@@ -63,6 +64,7 @@ abstract class IntegrationTest(
     val nullEqualsUnset: Boolean = false,
     val configUpdater: ConfigurationUpdater = FakeConfigurationUpdater,
     val micronautProperties: Map<Property, String> = emptyMap(),
+    val dataChannelMedium: DataChannelMedium = DataChannelMedium.STDIO
 ) {
     // Intentionally don't inject the actual destination process - we need a full factory
     // because some tests want to run multiple syncs, so we need to run the destination
@@ -229,13 +231,23 @@ abstract class IntegrationTest(
             } else {
                 emptyMap()
             }
+        val dataChannelMediumProperty =
+            when (dataChannelMedium) {
+                DataChannelMedium.STDIO -> emptyMap()
+                DataChannelMedium.SOCKETS ->
+                    mapOf(
+                        EnvVarConstants.DATA_CHANNEL_MEDIUM to dataChannelMedium.name,
+                        EnvVarConstants.DATA_CHANNEL_SOCKET_PATHS to "/tmp/ab_socket_test_0"
+                    )
+            }
         val destination =
             destinationProcessFactory.createDestinationProcess(
                 "write",
                 configContents,
                 catalog.asProtocolObject(),
                 useFileTransfer = useFileTransfer,
-                micronautProperties = micronautProperties + fileTransferProperty,
+                micronautProperties = micronautProperties + fileTransferProperty + dataChannelMediumProperty,
+                dataChannelMedium = dataChannelMedium,
             )
         return runBlocking(Dispatchers.IO) {
             launch { destination.run() }
@@ -283,6 +295,7 @@ abstract class IntegrationTest(
                 DestinationCatalog(listOf(stream)).asProtocolObject(),
                 useFileTransfer,
                 micronautProperties = micronautProperties + micronautPropertyEnableMicrobatching,
+                dataChannelMedium = dataChannelMedium,
             )
         return runBlocking(Dispatchers.IO) {
             launch {

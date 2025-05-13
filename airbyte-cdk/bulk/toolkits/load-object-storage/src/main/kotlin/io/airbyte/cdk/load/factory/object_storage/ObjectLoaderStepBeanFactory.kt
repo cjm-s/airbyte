@@ -41,6 +41,7 @@ class ObjectLoaderStepBeanFactory {
         outputQueue:
             PartitionedQueue<PipelineEvent<ObjectKey, ObjectLoaderPartFormatter.FormattedPart>>,
         taskFactory: LoadPipelineStepTaskFactory,
+        @Named("numInputPartitions") numInputPartitions: Int
     ) =
         ObjectLoaderPartFormatterStep(
             loader,
@@ -49,6 +50,7 @@ class ObjectLoaderStepBeanFactory {
             outputQueue,
             taskFactory,
             "record-part-formatter-step",
+            numWorkers = numInputPartitions
         )
 
     @Named("recordPartLoaderStep")

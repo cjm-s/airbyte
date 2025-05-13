@@ -22,8 +22,8 @@ class ObjectLoaderPartFormatterStep(
         PartitionedQueue<PipelineEvent<ObjectKey, ObjectLoaderPartFormatter.FormattedPart>>,
     private val taskFactory: LoadPipelineStepTaskFactory,
     private val stepId: String,
+    override val numWorkers: Int = objectLoader.numPartWorkers,
 ) : LoadPipelineStep {
-    override val numWorkers: Int = objectLoader.numPartWorkers
 
     override fun taskForPartition(partition: Int): LoadPipelineStepTask<*, *, *, *, *> {
         return taskFactory.createIntermediateStep(

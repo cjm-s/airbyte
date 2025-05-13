@@ -8,18 +8,24 @@ import io.airbyte.cdk.ConnectorUncleanExitException
 import io.airbyte.cdk.command.CliRunnable
 import io.airbyte.cdk.command.CliRunner
 import io.airbyte.cdk.command.FeatureFlag
+import io.airbyte.cdk.load.command.EnvVarConstants
 import io.airbyte.cdk.load.command.Property
+import io.airbyte.cdk.load.config.DataChannelMedium
+import io.airbyte.cdk.load.file.SocketWriterOutputStream
 import io.airbyte.cdk.load.util.serializeToString
 import io.airbyte.protocol.models.v0.AirbyteMessage
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.File
+import java.io.InputStream
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import java.io.PrintWriter
 import java.util.concurrent.Executors
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -33,7 +39,7 @@ class NonDockerizedDestination(
     useFileTransfer: Boolean,
     additionalMicronautEnvs: List<String>,
     micronautProperties: Map<Property, String>,
-    injectInputStream: Boolean,
+    dataChannelMedium: DataChannelMedium,
     vararg featureFlags: FeatureFlag,
 ) : DestinationProcess {
     private val destinationStdinPipe: PrintWriter
@@ -51,48 +57,57 @@ class NonDockerizedDestination(
             val fileContentStr = "123"
             file.writeText(fileContentStr)
         }
-        val destinationStdin = PipedInputStream()
-        // This could probably be a channel, somehow. But given the current structure,
-        // it's easier to just use the pipe stuff.
-        destinationStdinPipe =
-            // spotbugs requires explicitly specifying the charset,
-            // so we also have to specify autoFlush=false (i.e. the default behavior
-            // from PrintWriter(outputStream) ).
-            // Thanks, spotbugs.
-            PrintWriter(PipedOutputStream(destinationStdin), false, Charsets.UTF_8)
+        var destinationStdin: InputStream? = null
+
+        val additionalMicronautProperties = when (dataChannelMedium) {
+            DataChannelMedium.STDIO -> {
+                // This could probably be a channel, somehow. But given the current structure,
+                // it's easier to just use the pipe stuff.
+                destinationStdin = PipedInputStream()
+                // spotbugs requires explicitly specifying the charset,
+                // so we also have to specify autoFlush=false (i.e. the default behavior
+                // from PrintWriter(outputStream) ).
+                // Thanks, spotbugs.
+                destinationStdinPipe = PrintWriter(PipedOutputStream(destinationStdin), false, Charsets.UTF_8)
+                emptyMap()
+            }
+            DataChannelMedium.SOCKETS -> {
+                val socketFile = File.createTempFile("ab_socket", "socket")
+                val socketWriteOutputStream = SocketWriterOutputStream(socketFile.path.toString())
+                destinationStdinPipe = PrintWriter(socketWriteOutputStream)
+                mapOf(EnvVarConstants.DATA_CHANNEL_SOCKET_PATHS to socketFile.path.toString())
+            }
+        }
+
         destination =
             CliRunner.destination(
                 command,
                 configContents = configContents,
                 catalog = catalog,
-                inputStream =
-                    if (injectInputStream) {
-                        destinationStdin
-                    } else {
-                        null
-                    },
+                inputStream = destinationStdin,
                 featureFlags = featureFlags,
                 additionalMicronautEnvs = additionalMicronautEnvs,
-                micronautProperties = micronautProperties.mapKeys { (k, _) -> k.micronautProperty },
+                micronautProperties = (micronautProperties + additionalMicronautProperties)
+                    .mapKeys { (k, _) -> k.micronautProperty },
             )
     }
 
     override suspend fun run() {
         withContext(coroutineDispatcher) {
-                launch {
-                    try {
-                        destination.run()
-                    } catch (e: ConnectorUncleanExitException) {
-                        throw DestinationUncleanExitException.of(
-                            e.exitCode,
-                            destination.results.traces(),
-                            destination.results.states(),
-                        )
-                    }
-                    destinationComplete.complete(Unit)
+            launch {
+                try {
+                    destination.run()
+                } catch (e: ConnectorUncleanExitException) {
+                    throw DestinationUncleanExitException.of(
+                        e.exitCode,
+                        destination.results.traces(),
+                        destination.results.states(),
+                    )
                 }
+                destinationComplete.complete(Unit)
             }
-            .invokeOnCompletion { executor.shutdownNow() }
+        }
+        .invokeOnCompletion { executor.shutdownNow() }
     }
 
     override fun sendMessage(message: AirbyteMessage) {
@@ -137,6 +152,7 @@ class NonDockerizedDestinationFactory(
         catalog: ConfiguredAirbyteCatalog?,
         useFileTransfer: Boolean,
         micronautProperties: Map<Property, String>,
+        dataChannelMedium: DataChannelMedium,
         vararg featureFlags: FeatureFlag,
     ): DestinationProcess {
         // TODO pass test name into the destination process
@@ -147,7 +163,7 @@ class NonDockerizedDestinationFactory(
             useFileTransfer,
             additionalMicronautEnvs,
             micronautProperties,
-            injectInputStream = injectInputStream,
+            dataChannelMedium = dataChannelMedium,
             *featureFlags
         )
     }

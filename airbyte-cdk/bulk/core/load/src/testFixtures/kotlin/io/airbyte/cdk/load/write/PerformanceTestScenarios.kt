@@ -217,7 +217,6 @@ class SingleStreamFileTransfer(
                 DestinationFile(
                     stream,
                     System.currentTimeMillis(),
-                    "",
                     DestinationFile.AirbyteRecordMessageFile(
                         fileUrl = stagingDirectory.resolve(fileName).toString(),
                         fileRelativePath = fileName,
