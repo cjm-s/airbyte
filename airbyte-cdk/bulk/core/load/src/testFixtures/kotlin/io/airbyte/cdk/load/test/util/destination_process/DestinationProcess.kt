@@ -31,9 +31,9 @@ interface DestinationProcess {
      */
     suspend fun run()
 
-    fun sendMessage(string: String)
-    fun sendMessage(message: AirbyteMessage)
-    fun sendMessages(vararg messages: AirbyteMessage) {
+    suspend fun sendMessage(string: String)
+    suspend fun sendMessage(message: AirbyteMessage)
+    suspend fun sendMessages(vararg messages: AirbyteMessage) {
         messages.forEach { sendMessage(it) }
     }
 

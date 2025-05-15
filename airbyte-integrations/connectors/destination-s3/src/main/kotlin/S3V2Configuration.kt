@@ -26,6 +26,7 @@ import java.io.OutputStream
 
 data class S3V2Configuration<T : OutputStream>(
     // Client-facing configuration
+    // Forcing tests
     override val awsAccessKeyConfiguration: AWSAccessKeyConfiguration,
     override val awsArnRoleConfiguration: AWSArnRoleConfiguration,
     override val s3BucketConfiguration: S3BucketConfiguration,

@@ -6,8 +6,10 @@ package io.airbyte.cdk.load.test.util.destination_process
 
 import io.airbyte.cdk.command.FeatureFlag
 import io.airbyte.cdk.extensions.grantAllPermissions
+import io.airbyte.cdk.load.command.EnvVarConstants
 import io.airbyte.cdk.load.command.Property
 import io.airbyte.cdk.load.config.DataChannelMedium
+import io.airbyte.cdk.load.file.SocketWriterOutputStream
 import io.airbyte.cdk.load.util.deserializeToClass
 import io.airbyte.cdk.load.util.serializeToJsonBytes
 import io.airbyte.cdk.load.util.serializeToString
@@ -19,16 +21,18 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.BufferedWriter
 import java.io.File
 import java.io.OutputStreamWriter
+import java.io.PrintWriter
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock
-import java.util.Locale
-import java.util.Scanner
+import java.util.*
 import kotlin.io.path.writeText
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import org.apache.commons.lang3.RandomStringUtils
@@ -45,6 +49,7 @@ class DockerizedDestination(
     private val testName: String,
     useFileTransfer: Boolean,
     envVars: Map<String, String>,
+    private val dataChannelMedium: DataChannelMedium,
     vararg featureFlags: FeatureFlag,
 ) : DestinationProcess {
     private val process: Process
@@ -102,11 +107,28 @@ class DockerizedDestination(
         val containerName = "$shortImageName-$command-$randomSuffix"
         logger.info { "Creating docker container $containerName" }
         logger.info { "File transfer ${if (useFileTransfer) "is " else "isn't"} enabled" }
+
+        val socketName = "ab_socket_$randomSuffix.socket"
+        val socketWriter = SocketWriterOutputStream(tmpDir.resolve(socketName).toString())
+        socketWriter.create().toPath().grantAllPermissions()
+        val socketPathEnvVarsMaybe = if (dataChannelMedium == DataChannelMedium.SOCKETS) {
+            listOf(
+                "-e",
+                "${EnvVarConstants.DATA_CHANNEL_MEDIUM.environmentVariable}=${DataChannelMedium.SOCKETS}",
+                "-e",
+                "${EnvVarConstants.DATA_CHANNEL_SOCKET_PATHS.environmentVariable}=/tmp/$socketName",
+            )
+        } else {
+            emptyList()
+        }
+
+        println("SOCKET ENV $socketPathEnvVarsMaybe")
+
         val additionalEnvEntries =
             envVars.flatMap { (key, value) ->
                 logger.info { "Env vars: $key loaded" }
                 listOf("-e", "$key=$value")
-            }
+            } + socketPathEnvVarsMaybe
 
         // DANGER: env vars can contain secrets, so you MUST NOT log this command.
         val cmd: MutableList<String> =
@@ -160,7 +182,20 @@ class DockerizedDestination(
 
         process = ProcessBuilder(cmd).start()
         // Annoyingly, the process's stdin is called "outputStream"
-        destinationStdin = BufferedWriter(OutputStreamWriter(process.outputStream, Charsets.UTF_8))
+        destinationStdin = when (dataChannelMedium) {
+            DataChannelMedium.STDIO ->
+                BufferedWriter(OutputStreamWriter(process.outputStream, Charsets.UTF_8))
+            DataChannelMedium.SOCKETS ->
+                BufferedWriter(OutputStreamWriter(socketWriter, Charsets.UTF_8))
+        }
+    }
+
+    private val destinationAwaitingSocketConnection = CompletableDeferred<Unit>()
+
+    private suspend fun awaitReadyForSendingMessages() {
+        if (dataChannelMedium == DataChannelMedium.SOCKETS) {
+            destinationAwaitingSocketConnection.await()
+        }
     }
 
     override suspend fun run() {
@@ -181,6 +216,12 @@ class DockerizedDestination(
                             }
                         if (message.type == AirbyteMessage.Type.LOG) {
                             // Don't capture logs, just echo them directly to our own stdout
+                            if (message.log.message.contains("Waiting for socket file")) {
+                                // This is a hack to detect when the destination is ready to accept messages.
+                                // We should probably add a better way to do this.
+                                destinationAwaitingSocketConnection.complete(Unit)
+                            }
+
                             val combinedMessage =
                                 message.log.message +
                                     (if (message.log.stackTrace != null)
@@ -234,12 +275,14 @@ class DockerizedDestination(
             }
     }
 
-    override fun sendMessage(message: AirbyteMessage) {
+    override suspend fun sendMessage(message: AirbyteMessage) {
+        awaitReadyForSendingMessages()
         destinationStdin.write(message.serializeToString())
         destinationStdin.newLine()
     }
 
-    override fun sendMessage(string: String) {
+    override suspend fun sendMessage(string: String) {
+        awaitReadyForSendingMessages()
         destinationStdin.write(string)
         destinationStdin.newLine()
     }
@@ -300,6 +343,7 @@ class DockerizedDestinationFactory(
             testName,
             useFileTransfer,
             micronautProperties.mapKeys { (k, _) -> k.environmentVariable },
+            dataChannelMedium,
             *featureFlags,
         )
     }

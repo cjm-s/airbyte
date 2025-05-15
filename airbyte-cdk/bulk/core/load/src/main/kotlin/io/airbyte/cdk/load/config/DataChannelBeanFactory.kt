@@ -31,6 +31,7 @@ import io.airbyte.cdk.load.task.internal.HeartbeatTask
 import io.airbyte.cdk.load.task.internal.InputConsumerTask
 import io.airbyte.cdk.load.task.internal.ReservingDeserializingInputFlow
 import io.airbyte.cdk.load.write.LoadStrategy
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Factory
 import io.micronaut.context.annotation.Requires
 import io.micronaut.context.annotation.Value
@@ -44,6 +45,8 @@ typealias PipelineInputEvent = PipelineEvent<StreamKey, DestinationRecordRaw>
 /** Responsible for all wiring that depends directly on the data channel medium. */
 @Factory
 class DataChannelBeanFactory {
+    private val log = KotlinLogging.logger {}
+
     /**
      * The medium uses for the data channel. One of [DataChannelMedium]. This value is determined
      * here in order to have a single source of truth.
@@ -54,6 +57,7 @@ class DataChannelBeanFactory {
         @Value("\${airbyte.destination.core.data-channel.medium}")
         dataChannelMedium: DataChannelMedium
     ): DataChannelMedium {
+        log.info { "Using data channel medium $dataChannelMedium" }
         return dataChannelMedium
     }
 
@@ -63,14 +67,17 @@ class DataChannelBeanFactory {
         @Value("\${airbyte.destination.core.data-channel.socket-paths}")
         socketPaths: List<String>
     ): List<String> {
+        log.info { "Using socket paths $socketPaths" }
         return socketPaths
     }
 
     @Singleton
+    @Named("dataChannelFormat")
     fun dataChannelFormat(
         @Value("\${airbyte.destination.core.data-channel.format}")
         dataChannelFormat: DataChannelFormat
     ): DataChannelFormat {
+        log.info { "Using data channel format $dataChannelFormat" }
         return dataChannelFormat
     }
 
@@ -131,7 +138,7 @@ class DataChannelBeanFactory {
 
     @Singleton
     fun dataChannelReader(
-        dataChannelFormat: DataChannelFormat,
+        @Named("dataChannelFormat") dataChannelFormat: DataChannelFormat,
         catalog: DestinationCatalog
     ) = when (dataChannelFormat) {
             DataChannelFormat.JSONL -> JSONLDataChannelReader(catalog)
@@ -195,14 +202,11 @@ class DataChannelBeanFactory {
     fun stdioInputConsumerTask(
         catalog: DestinationCatalog,
         inputFlow: ReservingDeserializingInputFlow,
-        checkpointQueue: QueueWriter<Reserved<CheckpointMessageWrapped>>,
         syncManager: SyncManager,
-        @Named("fileMessageQueue") fileTransferQueue: MessageQueue<FileTransferQueueMessage>,
         @Named("_pipelineInputQueue")
         pipelineInputQueue: PartitionedQueue<PipelineEvent<StreamKey, DestinationRecordRaw>>? =
             null,
         partitioner: InputPartitioner,
-        openStreamQueue: QueueWriter<DestinationStream>,
         pipelineEventBookkeeper: PipelineEventBookkeeper,
     ): InputConsumerTask {
         check(pipelineInputQueue != null) {

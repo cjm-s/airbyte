@@ -97,12 +97,11 @@ class InputConsumerTask(
      */
     override suspend fun execute() {
         log.info { "Starting consuming messages from the input flow" }
-        try {
-            val unopenedStreams = catalog.streams.map { it.descriptor }.toMutableSet()
+        val unopenedStreams = catalog.streams.map { it.descriptor }.toMutableSet()
+        pipelineInputQueue.use {
             pipelineEventBookkeeper.use {
                 inputFlow.fold(unopenedStreams) { unopenedStreams, (_, reserved) ->
                     when (val message = reserved.value) {
-                        /* If the input message represents a record. */
                         is DestinationStreamAffinedMessage ->
                             handleRecordForPipeline(reserved.replace(message), unopenedStreams)
                         is CheckpointMessage ->
@@ -113,10 +112,6 @@ class InputConsumerTask(
                     unopenedStreams
                 }
             }
-            syncManager.markInputConsumed()
-        } finally {
-            log.info { "Closing record queues" }
-            pipelineInputQueue.close()
         }
     }
 }

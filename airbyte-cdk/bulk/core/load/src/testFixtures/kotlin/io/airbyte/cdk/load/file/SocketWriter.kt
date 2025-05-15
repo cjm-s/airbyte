@@ -16,21 +16,29 @@ class SocketWriterOutputStream(
 ): OutputStream() {
     private val log = KotlinLogging.logger {}
     private var outputStream: OutputStream? = null
+    private var serverSocketChannel: ServerSocketChannel? = null
+    private var socketFile: File? = null
 
-    private fun accept(): OutputStream {
-        val socketFile = File(socketPath)
-        if (socketFile.exists()) {
+    fun create(): File {
+        socketFile = File(socketPath)
+        if (socketFile!!.exists()) {
             log.info { "Deleting existing socket file $socketFile" }
-            socketFile.delete()
+            socketFile!!.delete()
         }
         log.info { "Creating socket file $socketFile" }
 
-        val address = UnixDomainSocketAddress.of(socketFile.toPath())
-        val serverSocketChannel: ServerSocketChannel =
-            ServerSocketChannel.open(StandardProtocolFamily.UNIX)
-        serverSocketChannel.bind(address)
+        val address = UnixDomainSocketAddress.of(socketFile!!.toPath())
+        serverSocketChannel = ServerSocketChannel.open(StandardProtocolFamily.UNIX)
+        serverSocketChannel!!.bind(address)
 
-        val socketChannel = serverSocketChannel.accept()
+        return socketFile!!
+    }
+
+    private fun accept(): OutputStream {
+        if (socketFile == null) {
+            create()
+        }
+        val socketChannel = serverSocketChannel!!.accept()
 
         log.info { "Connected to socket $socketFile for writing" }
 

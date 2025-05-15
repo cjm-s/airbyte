@@ -160,5 +160,7 @@ class PipelineEventBookkeeper(
     override suspend fun close() {
         fileTransferQueue.close()
         checkpointQueue.close()
+        openStreamQueue.close()
+        syncManager.markInputConsumed()
     }
 }

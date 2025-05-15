@@ -231,22 +231,13 @@ abstract class IntegrationTest(
             } else {
                 emptyMap()
             }
-        val dataChannelMediumProperty =
-            when (dataChannelMedium) {
-                DataChannelMedium.STDIO -> emptyMap()
-                DataChannelMedium.SOCKETS ->
-                    mapOf(
-                        EnvVarConstants.DATA_CHANNEL_MEDIUM to dataChannelMedium.name,
-                        EnvVarConstants.DATA_CHANNEL_SOCKET_PATHS to "/tmp/ab_socket_test_0"
-                    )
-            }
         val destination =
             destinationProcessFactory.createDestinationProcess(
                 "write",
                 configContents,
                 catalog.asProtocolObject(),
                 useFileTransfer = useFileTransfer,
-                micronautProperties = micronautProperties + fileTransferProperty + dataChannelMediumProperty,
+                micronautProperties = micronautProperties + fileTransferProperty,
                 dataChannelMedium = dataChannelMedium,
             )
         return runBlocking(Dispatchers.IO) {

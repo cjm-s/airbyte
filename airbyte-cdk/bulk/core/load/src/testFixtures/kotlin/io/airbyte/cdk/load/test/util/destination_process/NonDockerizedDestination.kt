@@ -23,12 +23,11 @@ import java.io.PipedOutputStream
 import java.io.PrintWriter
 import java.util.concurrent.Executors
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.testcontainers.shaded.com.github.dockerjava.core.dockerfile.DockerfileStatement.Env
 
 private val logger = KotlinLogging.logger {}
 
@@ -69,13 +68,18 @@ class NonDockerizedDestination(
                 // from PrintWriter(outputStream) ).
                 // Thanks, spotbugs.
                 destinationStdinPipe = PrintWriter(PipedOutputStream(destinationStdin), false, Charsets.UTF_8)
-                emptyMap()
+                mapOf(
+                    EnvVarConstants.DATA_CHANNEL_MEDIUM to DataChannelMedium.STDIO.toString(),
+                )
             }
             DataChannelMedium.SOCKETS -> {
-                val socketFile = File.createTempFile("ab_socket", "socket")
-                val socketWriteOutputStream = SocketWriterOutputStream(socketFile.path.toString())
-                destinationStdinPipe = PrintWriter(socketWriteOutputStream)
-                mapOf(EnvVarConstants.DATA_CHANNEL_SOCKET_PATHS to socketFile.path.toString())
+                val socketFile = File.createTempFile("ab_socket", ".socket")
+                val socketWriterOutputStream = SocketWriterOutputStream(socketFile.path.toString())
+                destinationStdinPipe = PrintWriter(socketWriterOutputStream)
+                mapOf(
+                    EnvVarConstants.DATA_CHANNEL_MEDIUM to DataChannelMedium.SOCKETS.toString(),
+                    EnvVarConstants.DATA_CHANNEL_SOCKET_PATHS to socketFile.path.toString()
+                )
             }
         }
 
@@ -110,11 +114,11 @@ class NonDockerizedDestination(
         .invokeOnCompletion { executor.shutdownNow() }
     }
 
-    override fun sendMessage(message: AirbyteMessage) {
+    override suspend fun sendMessage(message: AirbyteMessage) {
         destinationStdinPipe.println(message.serializeToString())
     }
 
-    override fun sendMessage(string: String) {
+    override suspend fun sendMessage(string: String) {
         destinationStdinPipe.println(string)
     }
 

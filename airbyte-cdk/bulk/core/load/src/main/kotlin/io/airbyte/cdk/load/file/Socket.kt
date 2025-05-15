@@ -23,17 +23,22 @@ class Socket(
     suspend fun connect(block: suspend (InputStream) -> Unit) {
         val socketFile = File(socketPath)
         while (!socketFile.exists()) {
+            // HACK: The dockerized destination tests look for this message
+            // as a sign that it's safe to make the bocking bind/accept calls.
+            // Removing this will break tests. TODO: Anything else.
             log.info { "Waiting for socket file to be created: $socketPath" }
             delay(connectWaitDelayMs)
         }
 
+        log.info { "Socket file exists: $socketPath"}
+
         // TODO: This should be done for us by the platform
-        if (setPermissions) {
-            Files.setPosixFilePermissions(
-                socketFile.toPath(),
-                PosixFilePermissions.fromString("rwxrwxrwx")
-            )
-        }
+//        if (setPermissions) {
+//            Files.setPosixFilePermissions(
+//                socketFile.toPath(),
+//                PosixFilePermissions.fromString("rwxrwxrwx")
+//            )
+//        }
 
         val address = UnixDomainSocketAddress.of(socketFile.toPath())
         SocketChannel.open(StandardProtocolFamily.UNIX).use { channel ->

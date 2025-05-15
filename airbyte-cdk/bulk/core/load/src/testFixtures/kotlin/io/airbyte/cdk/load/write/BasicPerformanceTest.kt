@@ -71,7 +71,7 @@ interface PerformanceTestScenario {
      * This would be where records are emitted to the destination. How, is up to the scenario to
      * define.
      */
-    fun send(destination: DestinationProcess)
+    suspend fun send(destination: DestinationProcess)
 
     /**
      * Returns the expectations from the test scenario: how many records were emitted, how many
