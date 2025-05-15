@@ -31,6 +31,7 @@ class HeartbeatTask<K : WithStream, V>(
             delay(config.heartbeatIntervalSeconds * 1000L)
             try {
                 log.info { "Broadcasting heartbeat..." }
+
                 inputQueue.broadcast(PipelineHeartbeat())
             } catch (e: ClosedSendChannelException) {
                 // Do nothing. We don't care. Move on
