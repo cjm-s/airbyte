@@ -203,10 +203,23 @@ enum class UnknownTypesBehavior {
     FAIL,
 }
 
-// eventually we'll put some parameters in here (e.g. CDC deletes as soft vs hard delete)
-// and should switch it to a data class.
-// but for now, that would be a compiler error, so just use a normal class.
-class DedupBehavior
+data class DedupBehavior(
+    val cdcDeletionMode: CdcDeletionMode = CdcDeletionMode.HARD_DELETE,
+) {
+    enum class CdcDeletionMode {
+        /**
+         * CDC deletions are actual deletions; we completely drop the record from the destination.
+         */
+        HARD_DELETE,
+
+        /**
+         * CDC deletions are represented by simply upserting the deletion record to the destination.
+         * This behavior is source-dependent, but typically results in nulling out all fields except
+         * for the primary key(s), cursor, and any `_ab_cdc_*` fields.
+         */
+        SOFT_DELETE,
+    }
+}
 
 abstract class BasicFunctionalityIntegrationTest(
     /** The config to pass into the connector, as a serialized JSON blob */
@@ -1718,12 +1731,81 @@ abstract class BasicFunctionalityIntegrationTest(
                     """{"id1": 1, "id2": 201, "updated_at": "2000-01-02T00:01:00Z", "_ab_cdc_deleted_at": "1970-01-01T00:00:00Z"}""",
                     extractedAt = 2000,
                 ),
+                // insert + delete Charlie within a single sync.
+                makeRecord(
+                    """{"id1": 1, "id2": 202, "updated_at": "2000-01-02T00:00:00Z", "name": "Charlie1"}""",
+                    extractedAt = 2000,
+                ),
+                makeRecord(
+                    """{"id1": 1, "id2": 202, "updated_at": "2000-01-02T00:01:00Z", "_ab_cdc_deleted_at": "1970-01-01T00:00:00Z"}""",
+                    extractedAt = 2000,
+                ),
+                // delete some nonexistent record - this is incoherent, but we should behave
+                // reasonably.
+                makeRecord(
+                    """{"id1": 1, "id2": 203, "updated_at": "2000-01-02T00:01:00Z", "_ab_cdc_deleted_at": "1970-01-01T00:00:00Z"}""",
+                    extractedAt = 2000,
+                ),
             ),
         )
+        val deletedRecords =
+            when (dedupBehavior!!.cdcDeletionMode) {
+                // in hard deletes mode, we drop Bob
+                DedupBehavior.CdcDeletionMode.HARD_DELETE -> emptyList()
+                // in soft deletes mode, we just take the deletion record wholesale.
+                // note that we just upsert the record directly, without retaining any previous
+                // values. I.e. the `name` field is null, because the final records have null name.
+                DedupBehavior.CdcDeletionMode.SOFT_DELETE ->
+                    listOf(
+                        OutputRecord(
+                            extractedAt = 2000,
+                            generationId = 42,
+                            data =
+                                mapOf(
+                                    "id1" to 1,
+                                    "id2" to 201,
+                                    "updated_at" to
+                                        TimestampWithTimezoneValue("2000-01-02T00:01:00Z"),
+                                    "_ab_cdc_deleted_at" to
+                                        TimestampWithTimezoneValue("1970-01-01T00:00:00Z"),
+                                ),
+                            airbyteMeta = OutputRecord.Meta(syncId = 43),
+                        ),
+                        OutputRecord(
+                            extractedAt = 2000,
+                            generationId = 42,
+                            data =
+                                mapOf(
+                                    "id1" to 1,
+                                    "id2" to 202,
+                                    "updated_at" to
+                                        TimestampWithTimezoneValue("2000-01-02T00:01:00Z"),
+                                    "_ab_cdc_deleted_at" to
+                                        TimestampWithTimezoneValue("1970-01-01T00:00:00Z"),
+                                ),
+                            airbyteMeta = OutputRecord.Meta(syncId = 43),
+                        ),
+                        OutputRecord(
+                            extractedAt = 2000,
+                            generationId = 42,
+                            data =
+                                mapOf(
+                                    "id1" to 1,
+                                    "id2" to 203,
+                                    "updated_at" to
+                                        TimestampWithTimezoneValue("2000-01-02T00:01:00Z"),
+                                    "_ab_cdc_deleted_at" to
+                                        TimestampWithTimezoneValue("1970-01-01T00:00:00Z"),
+                                ),
+                            airbyteMeta = OutputRecord.Meta(syncId = 43),
+                        ),
+                    )
+            }
         dumpAndDiffRecords(
             parsedConfig,
             listOf(
-                // Alice still exists (and has been updated to the latest version), but Bob is gone
+                // Alice still exists (and has been updated to the latest version), and Bob is
+                // deleted.
                 OutputRecord(
                     extractedAt = 2000,
                     generationId = 42,
@@ -1737,7 +1819,7 @@ abstract class BasicFunctionalityIntegrationTest(
                         ),
                     airbyteMeta = OutputRecord.Meta(syncId = 43),
                 )
-            ),
+            ) + deletedRecords,
             sync2Stream,
             primaryKey = listOf(listOf("id1"), listOf("id2")),
             cursor = listOf("updated_at"),
