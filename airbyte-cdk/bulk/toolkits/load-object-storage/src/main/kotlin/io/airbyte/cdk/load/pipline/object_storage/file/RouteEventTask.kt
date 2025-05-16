@@ -36,7 +36,6 @@ class RouteEventTask(
             is PipelineHeartbeat -> {
                 recordQueue.broadcast(event)
             }
-
             is PipelineMessage -> {
                 val streamDesc = event.key.stream
                 val stream = catalog.getStream(streamDesc)
@@ -61,7 +60,6 @@ class RouteEventTask(
                 // "releases" memory on the input queue.
                 event.postProcessingCallback?.let { it() }
             }
-
             is PipelineEndOfStream -> {
                 val streamDesc = event.stream
                 val stream = catalog.getStream(streamDesc)
@@ -73,4 +71,4 @@ class RouteEventTask(
                 }
             }
         }
-    }
+}
